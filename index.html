@@ -34,7 +34,41 @@
     --nav-h: 72px;
     --font-display: 'Syne', sans-serif;
     --font-mono: 'DM Mono', monospace;
+    --nav-bg: rgba(15,15,15,0.92);
+    --modal-overlay: rgba(0,0,0,0.7);
   }
+
+  body.light {
+    --bg: #f5f5f2;
+    --bg2: #ffffff;
+    --bg3: #ebebea;
+    --bg4: #dededd;
+    --border: #d0d0ce;
+    --text: #1a1a1a;
+    --text2: #666666;
+    --text3: #aaaaaa;
+    --accent: #7ab800;
+    --accent-dim: rgba(122,184,0,0.12);
+    --accent-dim2: rgba(122,184,0,0.06);
+    --red: #d93025;
+    --red-dim: rgba(217,48,37,0.10);
+    --blue: #1a73e8;
+    --blue-dim: rgba(26,115,232,0.10);
+    --orange: #e37400;
+    --orange-dim: rgba(227,116,0,0.10);
+    --nav-bg: rgba(245,245,242,0.92);
+    --modal-overlay: rgba(0,0,0,0.4);
+  }
+
+  body.light .balance-card { background: var(--accent); }
+  body.light .balance-amount { color: #fff; }
+  body.light .balance-label { color: rgba(255,255,255,0.7); }
+  body.light .nav-btn.add-btn { background: var(--accent); box-shadow: 0 0 20px rgba(122,184,0,0.25); }
+  body.light .toggle.on { background: var(--accent); border-color: var(--accent); }
+  body.light .toggle.on .toggle-thumb { background: #fff; }
+  body.light .type-btn.active.income { background: var(--accent); color: #fff; }
+  body.light .save-btn { color: #fff; }
+  body.light .btn-save { color: #fff; }
 
   * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
@@ -85,7 +119,7 @@
     position: fixed;
     bottom: 0; left: 0; right: 0;
     height: var(--nav-h);
-    background: rgba(15,15,15,0.92);
+    background: var(--nav-bg);
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
     border-top: 1px solid var(--border);
@@ -181,13 +215,15 @@
     margin-bottom: 6px;
   }
   .balance-amount {
-    font-size: 42px;
-    font-weight: 800;
+    font-family: var(--font-mono);
+    font-size: clamp(24px, 8vw, 40px);
+    font-weight: 500;
     color: #0f0f0f;
-    letter-spacing: -2px;
+    letter-spacing: -1px;
     line-height: 1;
+    word-break: break-all;
   }
-  .balance-amount.negative { color: rgba(0,0,0,0.6); }
+  .balance-amount.negative { color: rgba(0,0,0,0.5); }
 
   .stats-row {
     display: grid;
@@ -598,7 +634,7 @@
     display: none;
     position: fixed;
     inset: 0;
-    background: rgba(0,0,0,0.7);
+    background: var(--modal-overlay);
     backdrop-filter: blur(4px);
     z-index: 200;
     align-items: flex-end;
@@ -756,7 +792,7 @@
   /* anno section */
   .year-stats {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     gap: 8px;
     margin-bottom: 12px;
   }
@@ -782,6 +818,31 @@
   }
 
   input[type="hidden"] { display: none; }
+
+  /* theme toggle btn */
+  .theme-btn {
+    width: 36px; height: 36px;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    font-size: 17px;
+    flex-shrink: 0;
+    transition: background 0.2s;
+  }
+
+  /* anno chart */
+  .anno-chart-wrap { overflow-x: auto; }
+  .anno-chart-wrap::-webkit-scrollbar { display: none; }
+  .anno-svg { display: block; }
+  .anno-bar-income { fill: var(--accent); opacity: 0.85; }
+  .anno-bar-expense { fill: var(--red); opacity: 0.7; }
+  .anno-line { fill: none; stroke: var(--blue); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+  .anno-dot { fill: var(--blue); }
+  .anno-label { font-family: var(--font-mono); font-size: 9px; fill: var(--text3); text-anchor: middle; }
+  .anno-label-cur { fill: var(--text2); font-weight: 500; }
+  .anno-zero { stroke: var(--border); stroke-width: 1; stroke-dasharray: 3 3; }
 </style>
 </head>
 <body>
@@ -796,8 +857,9 @@
       <div class="topbar-title">Soldi</div>
       <div class="topbar-sub" id="dash-year-label">2025</div>
     </div>
-    <div style="font-size:11px;color:var(--text2);font-family:var(--font-mono);text-align:right;">
+    <div style="font-size:11px;color:var(--text2);font-family:var(--font-mono);text-align:right;display:flex;align-items:center;gap:10px">
       <div id="dash-tx-count">0 movimenti</div>
+      <button class="theme-btn" id="theme-btn" onclick="toggleTheme()" title="Cambia tema">☀️</button>
     </div>
   </div>
   <div class="scroll-area">
@@ -851,8 +913,10 @@
     <!-- anno -->
     <div class="section-title">Anno in corso</div>
     <div class="year-stats" id="year-stats"></div>
-    <div class="card">
-      <div class="trend-chart" id="trend-chart"></div>
+    <div class="card" style="padding:16px 12px 12px">
+      <div class="anno-chart-wrap">
+        <div id="trend-chart"></div>
+      </div>
     </div>
 
     <!-- recenti -->
@@ -1304,10 +1368,14 @@ function renderYearStats(y) {
   const inc = yearTx.filter(t => t.type === 'income').reduce((s,t) => s+t.amount, 0);
   const exp = yearTx.filter(t => t.type === 'expense').reduce((s,t) => s+t.amount, 0);
   const biz = yearTx.filter(t => t.type === 'expense' && t.biz).reduce((s,t) => s+t.amount, 0);
+  const netto = inc - exp;
+  const nettoColor = netto >= 0 ? 'var(--accent)' : 'var(--red)';
+  const nettoSign = netto >= 0 ? '' : '−';
   document.getElementById('year-stats').innerHTML = `
     <div class="year-stat"><div class="year-stat-val" style="color:var(--accent)">${fmtShort(inc)}</div><div class="year-stat-lbl">Entrate</div></div>
     <div class="year-stat"><div class="year-stat-val" style="color:var(--red)">${fmtShort(exp)}</div><div class="year-stat-lbl">Spese</div></div>
-    <div class="year-stat"><div class="year-stat-val" style="color:var(--blue)">${fmtShort(biz)}</div><div class="year-stat-lbl">Aziendali</div></div>`;
+    <div class="year-stat"><div class="year-stat-val" style="color:${nettoColor}">${nettoSign}${fmtShort(Math.abs(netto))}</div><div class="year-stat-lbl">Netto</div></div>
+    <div class="year-stat"><div class="year-stat-val" style="color:var(--blue)">${fmtShort(biz)}</div><div class="year-stat-lbl">Aziend.</div></div>`;
 }
 
 function renderTrend(y) {
@@ -1317,17 +1385,69 @@ function renderTrend(y) {
     const tx = transactions.filter(t => { const d = new Date(t.date); return d.getFullYear() === y && d.getMonth() === i; });
     const inc = tx.filter(t => t.type === 'income').reduce((s,t) => s+t.amount, 0);
     const exp = tx.filter(t => t.type === 'expense').reduce((s,t) => s+t.amount, 0);
-    return { lbl, balance: inc - exp, month: i };
+    return { lbl, inc, exp, balance: inc - exp, month: i };
   });
-  const maxAbs = Math.max(...data.map(d => Math.abs(d.balance)), 1);
-  el.innerHTML = data.map(d => {
-    const h = Math.max(Math.round(Math.abs(d.balance) / maxAbs * 50), 2);
+
+  const maxVal = Math.max(...data.map(d => Math.max(d.inc, d.exp)), 1);
+  const chartH = 90, barW = 14, gap = 6, colW = barW * 2 + gap + 4;
+  const totalW = colW * 12 + 8;
+  const topPad = 20, botPad = 20;
+
+  // cumulative line points
+  let cumSum = 0;
+  const linePoints = data.map((d, i) => {
+    cumSum += d.balance;
+    const x = i * colW + colW / 2 + 4;
+    return { x, val: cumSum, lbl: d.lbl, month: d.month };
+  });
+
+  const cumMax = Math.max(...linePoints.map(p => Math.abs(p.val)), 1);
+  // scale line to top half of chart area
+  const lineScale = (chartH * 0.45) / cumMax;
+  const lineBase = topPad + chartH * 0.5;
+
+  let svgContent = '';
+
+  // bars
+  data.forEach((d, i) => {
+    const x = i * colW + 4;
     const isCur = d.month === now.getMonth() && y === now.getFullYear();
-    return `<div class="trend-col">
-      <div class="trend-bar-wrap"><div class="trend-bar ${isCur ? 'current' : 'positive'}" style="height:${h}px"></div></div>
-      <div class="trend-lbl ${isCur ? 'current' : ''}">${d.lbl}</div>
+    const incH = Math.max(1, (d.inc / maxVal) * chartH * 0.8);
+    const expH = Math.max(1, (d.exp / maxVal) * chartH * 0.8);
+    const barBase = topPad + chartH - botPad + 8;
+    const incX = x, expX = x + barW + 2;
+    const opacity = isCur ? '1' : '0.5';
+    svgContent += `<rect class="anno-bar-income" x="${incX}" y="${barBase - incH}" width="${barW}" height="${incH}" rx="2" opacity="${opacity}"/>`;
+    svgContent += `<rect class="anno-bar-expense" x="${expX}" y="${barBase - expH}" width="${barW}" height="${expH}" rx="2" opacity="${opacity}"/>`;
+    // label
+    const lblClass = isCur ? 'anno-label anno-label-cur' : 'anno-label';
+    svgContent += `<text class="${lblClass}" x="${x + colW/2 - 2}" y="${topPad + chartH + 2}">${d.lbl}</text>`;
+  });
+
+  // zero line for cumulative
+  svgContent += `<line class="anno-zero" x1="0" y1="${lineBase}" x2="${totalW}" y2="${lineBase}"/>`;
+
+  // cumulative line
+  const pts = linePoints.map(p => {
+    const ly = lineBase - p.val * lineScale;
+    return `${p.x},${ly}`;
+  }).join(' ');
+  svgContent += `<polyline class="anno-line" points="${pts}"/>`;
+
+  // dots on line
+  linePoints.forEach(p => {
+    const ly = lineBase - p.val * lineScale;
+    const isCur = p.month === now.getMonth() && y === now.getFullYear();
+    svgContent += `<circle class="anno-dot" cx="${p.x}" cy="${ly}" r="${isCur ? 4 : 2.5}" opacity="${isCur ? 1 : 0.6}"/>`;
+  });
+
+  const svgH = topPad + chartH + botPad + 4;
+  el.innerHTML = `<svg class="anno-svg" width="${totalW}" height="${svgH}" viewBox="0 0 ${totalW} ${svgH}">${svgContent}</svg>
+    <div style="display:flex;gap:14px;margin-top:8px;font-size:10px;color:var(--text2);font-family:var(--font-mono)">
+      <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:6px;background:var(--accent);opacity:0.85;border-radius:2px;display:inline-block"></span>Entrate</span>
+      <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:6px;background:var(--red);opacity:0.7;border-radius:2px;display:inline-block"></span>Uscite</span>
+      <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:2px;background:var(--blue);display:inline-block"></span>Saldo cumulativo</span>
     </div>`;
-  }).join('');
 }
 
 function renderRecent(txList) {
@@ -1637,8 +1757,20 @@ function importData(input) {
   input.value = '';
 }
 
+// ── THEME ──
+function toggleTheme() {
+  const isLight = document.body.classList.toggle('light');
+  localStorage.setItem('soldi_theme', isLight ? 'light' : 'dark');
+  document.getElementById('theme-btn').textContent = isLight ? '🌙' : '☀️';
+}
+
 // ── INIT ──
 load();
+// Restore theme
+if (localStorage.getItem('soldi_theme') === 'light') {
+  document.body.classList.add('light');
+  document.getElementById('theme-btn').textContent = '🌙';
+}
 // Set dashboard to current month
 currentDashMonth = new Date().getMonth();
 currentDashYear = new Date().getFullYear();
