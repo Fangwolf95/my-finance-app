@@ -90,6 +90,8 @@
     overflow-x: hidden;
     padding: 0 16px calc(var(--nav-h) + 16px);
     -webkit-overflow-scrolling: touch;
+    box-sizing: border-box;
+    width: 100%;
   }
   .scroll-area::-webkit-scrollbar { display: none; }
 
@@ -764,29 +766,36 @@
   /* category grid for add */
   .cat-grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 8px;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+    width: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
   }
   .cat-chip {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 4px;
-    padding: 10px 4px;
+    gap: 3px;
+    padding: 8px 2px;
     background: var(--bg3);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     cursor: pointer;
     transition: all 0.15s;
-    font-size: 9px;
+    font-size: 8px;
     font-weight: 700;
     color: var(--text2);
     text-transform: uppercase;
-    letter-spacing: 0.3px;
+    letter-spacing: 0.2px;
     text-align: center;
     line-height: 1.2;
+    min-width: 0;
+    overflow: hidden;
+    box-sizing: border-box;
   }
-  .cat-chip .cat-emoji { font-size: 20px; }
+  .cat-chip .cat-emoji { font-size: 18px; line-height: 1; display: block; }
+  .cat-chip .cat-name { width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 1px; display: block; font-size: 8px; }
   .cat-chip.selected { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
 
   /* anno section */
@@ -817,7 +826,92 @@
     margin-top: 3px;
   }
 
+  /* search bar */
+  .search-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 10px 14px;
+    margin-bottom: 12px;
+    transition: border-color 0.2s;
+  }
+  .search-wrap:focus-within { border-color: var(--accent); }
+  .search-wrap svg { width: 16px; height: 16px; color: var(--text3); flex-shrink: 0; }
+  .search-wrap input {
+    flex: 1;
+    background: none;
+    border: none;
+    outline: none;
+    color: var(--text);
+    font-family: var(--font-display);
+    font-size: 14px;
+  }
+  .search-wrap input::placeholder { color: var(--text3); }
+  #search-clear {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    color: var(--text3);
+  }
+  #search-clear svg { width: 14px; height: 14px; }
+
   input[type="hidden"] { display: none; }
+
+  /* search bar */
+  .search-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    margin-bottom: 12px;
+    transition: border-color 0.2s;
+  }
+  .search-wrap:focus-within { border-color: var(--accent); }
+  .search-wrap svg { width: 16px; height: 16px; color: var(--text3); flex-shrink: 0; margin-left: 12px; }
+  .search-wrap input {
+    flex: 1;
+    background: none;
+    border: none;
+    outline: none;
+    color: var(--text);
+    font-family: var(--font-display);
+    font-size: 14px;
+    padding: 11px 12px;
+  }
+  .search-wrap input::placeholder { color: var(--text3); }
+  .search-wrap button {
+    background: none;
+    border: none;
+    color: var(--text3);
+    padding: 0 12px;
+    cursor: pointer;
+    display: flex; align-items: center;
+  }
+  .search-wrap button svg { margin: 0; width: 14px; height: 14px; }
+
+  /* rate warning */
+  .rate-warn {
+    background: var(--orange-dim);
+    border: 1px solid rgba(255,159,67,0.25);
+    border-radius: var(--radius-sm);
+    padding: 10px 12px;
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--orange);
+    line-height: 1.4;
+    margin-bottom: 14px;
+  }
+  .rate-warn strong { font-weight: 700; }
 
   /* theme toggle btn */
   .theme-btn {
@@ -1036,6 +1130,14 @@
       <input type="file" id="import-file" accept=".json" style="display:none" onchange="importData(this)">
     </div>
 
+    <div class="search-wrap">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+      <input type="text" id="storico-search" placeholder="Cerca per nota o categoria…" oninput="renderStorico()">
+      <button id="search-clear" onclick="clearSearch()" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+
     <div class="filter-bar" id="filter-bar"></div>
 
     <div id="storico-list"></div>
@@ -1062,6 +1164,7 @@
   <div class="modal">
     <div class="modal-handle"></div>
     <div class="modal-title">Modifica movimento</div>
+    <div class="rate-warn" id="edit-rate-warn" style="display:none"></div>
     <input type="hidden" id="edit-id">
     <div class="type-toggle" style="margin-bottom:16px">
       <button class="type-btn expense active" id="edit-btn-expense" onclick="setEditType('expense')">Spesa</button>
@@ -1206,6 +1309,7 @@ const MONTHS = ['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio'
 const MONTHS_SHORT = ['Gen','Feb','Mar','Apr','Mag','Giu','Lug','Ago','Set','Ott','Nov','Dic'];
 
 function getCat(id, type) {
+  if (id === '_altro') return {name: 'Altro', emoji: '📦', id: '_altro'};
   const all = [...CATEGORIES.expense, ...CATEGORIES.income];
   return all.find(c => c.id === id) || {name: id, emoji: '📌'};
 }
@@ -1310,12 +1414,22 @@ function renderDonut(expTx, total) {
     wrap.innerHTML = '<div class="empty" style="width:100%;padding:20px 0"><div class="empty-text" style="color:var(--text3)">Nessuna spesa</div></div>';
     return;
   }
-  // group by cat
   const map = {};
   expTx.forEach(t => { map[t.cat] = (map[t.cat] || 0) + t.amount; });
-  const sorted = Object.entries(map).sort((a,b) => b[1]-a[1]).slice(0, 6);
-  const size = 120, cx = 60, cy = 60, r = 48, ir = 30;
+  const allEntries = Object.entries(map).sort((a,b) => b[1]-a[1]);
 
+  // group slices < 4% into "altro"
+  const THRESHOLD = 0.04;
+  const main = [], small = [];
+  allEntries.forEach(([cat, val]) => {
+    (val / total < THRESHOLD ? small : main).push([cat, val]);
+  });
+  // keep max 6 main slices, rest go to small
+  if (main.length > 6) { small.push(...main.splice(6)); }
+  const altroVal = small.reduce((s, [,v]) => s + v, 0);
+  const sorted = altroVal > 0 ? [...main, ['_altro', altroVal]] : main;
+
+  const size = 120, cx = 60, cy = 60, r = 48, ir = 30;
   let paths = '';
   let angle = -Math.PI / 2;
   sorted.forEach(([cat, val], i) => {
@@ -1326,11 +1440,11 @@ function renderDonut(expTx, total) {
     const ix1 = cx + ir * Math.cos(angle - slice), iy1 = cy + ir * Math.sin(angle - slice);
     const ix2 = cx + ir * Math.cos(angle), iy2 = cy + ir * Math.sin(angle);
     const large = slice > Math.PI ? 1 : 0;
-    paths += `<path d="M${x1},${y1} A${r},${r},0,${large},1,${x2},${y2} L${ix2},${iy2} A${ir},${ir},0,${large},0,${ix1},${iy1} Z" fill="${CHART_COLORS[i]}" opacity="0.9"/>`;
+    paths += `<path d="M${x1.toFixed(2)},${y1.toFixed(2)} A${r},${r},0,${large},1,${x2.toFixed(2)},${y2.toFixed(2)} L${ix2.toFixed(2)},${iy2.toFixed(2)} A${ir},${ir},0,${large},0,${ix1.toFixed(2)},${iy1.toFixed(2)} Z" fill="${CHART_COLORS[i]}" opacity="0.9"/>`;
   });
 
   const legend = sorted.map(([cat, val], i) => {
-    const c = getCat(cat);
+    const c = cat === '_altro' ? {emoji: '➕', name: 'Altro'} : getCat(cat);
     const pct = Math.round(val / total * 100);
     return `<div class="legend-item"><div class="legend-dot" style="background:${CHART_COLORS[i]}"></div><span>${c.emoji} ${c.name}</span><span class="legend-pct">${pct}%</span></div>`;
   }).join('');
@@ -1509,7 +1623,7 @@ function renderCatGrid() {
   const cats = CATEGORIES[currentType];
   document.getElementById('cat-grid').innerHTML = cats.map(c => `
     <div class="cat-chip ${selectedCat === c.id ? 'selected' : ''}" onclick="selectCat('${c.id}')">
-      <span class="cat-emoji">${c.emoji}</span>${c.name}
+      <span class="cat-emoji">${c.emoji}</span><span class="cat-name">${c.name}</span>
     </div>`).join('');
 }
 
@@ -1623,8 +1737,20 @@ function saveTransaction() {
 // ── STORICO ──
 let storicoFilter = 'all';
 
+function clearSearch() {
+  document.getElementById('storico-search').value = '';
+  document.getElementById('search-clear').style.display = 'none';
+  renderStorico();
+}
+
 function renderStorico() {
   expandRecurring();
+  const searchEl = document.getElementById('storico-search');
+  const query = searchEl ? searchEl.value.trim().toLowerCase() : '';
+  if (searchEl) {
+    document.getElementById('search-clear').style.display = query ? 'flex' : 'none';
+  }
+
   const bar = document.getElementById('filter-bar');
   const months = [...new Set(transactions.map(t => t.date.slice(0,7)))].sort().reverse();
   bar.innerHTML = `<div class="filter-chip ${storicoFilter==='all'?'active':''}" onclick="setFilter('all')">Tutti</div>` +
@@ -1636,8 +1762,21 @@ function renderStorico() {
   let filtered = [...transactions].sort((a,b) => new Date(b.date) - new Date(a.date));
   if (storicoFilter !== 'all') filtered = filtered.filter(t => t.date.startsWith(storicoFilter));
 
+  // search filter
+  if (query) {
+    filtered = filtered.filter(t => {
+      const cat = getCat(t.cat);
+      return (t.note || '').toLowerCase().includes(query) ||
+             cat.name.toLowerCase().includes(query) ||
+             cat.emoji.includes(query);
+    });
+  }
+
   const el = document.getElementById('storico-list');
-  if (!filtered.length) { el.innerHTML = '<div class="empty"><div class="empty-icon">📭</div><div class="empty-text">Nessun movimento</div></div>'; return; }
+  if (!filtered.length) {
+    el.innerHTML = `<div class="empty"><div class="empty-icon">${query ? '🔍' : '📭'}</div><div class="empty-text">${query ? 'Nessun risultato per "' + query + '"' : 'Nessun movimento'}</div></div>`;
+    return;
+  }
 
   // group by month
   const groups = {};
@@ -1676,6 +1815,17 @@ function openEdit(id) {
   document.getElementById('edit-date').value = t.date;
   document.getElementById('edit-note').value = t.note || '';
   document.getElementById('edit-toggle-biz').classList.toggle('on', !!t.biz);
+
+  // rate warning
+  const rateWarn = document.getElementById('edit-rate-warn');
+  if (t.rateGroupId) {
+    const remaining = t.rateTot - t.rateCurrent;
+    rateWarn.style.display = 'flex';
+    rateWarn.innerHTML = `<span style="font-size:16px">⚠️</span><span>Questa è la rata <strong>${t.rateCurrent}/${t.rateTot}</strong>. Le modifiche riguardano solo questa rata${remaining > 0 ? ` — restano ${remaining} rate future` : ''}.</span>`;
+  } else {
+    rateWarn.style.display = 'none';
+  }
+
   // populate cat select
   const sel = document.getElementById('edit-cat');
   const all = [...CATEGORIES.expense, ...CATEGORIES.income];
