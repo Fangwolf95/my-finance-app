@@ -1005,7 +1005,7 @@
     </div>
 
     <!-- anno -->
-    <div class="section-title">Anno in corso</div>
+    <div class="section-title" id="year-section-title">Anno in corso</div>
     <div class="year-stats" id="year-stats"></div>
     <div class="card" style="padding:16px 12px 12px">
       <div class="anno-chart-wrap">
@@ -1080,14 +1080,14 @@
           <div class="toggle-name">Spesa aziendale</div>
           <div class="toggle-desc">Verrà rimborsata tra ~2 mesi</div>
         </div>
-        <div class="toggle" id="toggle-biz" onclick="toggleSwitch('biz')"></div>
+        <div class="toggle" id="toggle-biz" onclick="toggleSwitch('biz')"><div class="toggle-thumb"></div></div>
       </div>
       <div class="toggle-row">
         <div class="toggle-info">
           <div class="toggle-name">Spesa rateizzata</div>
           <div class="toggle-desc">Dividi su più mesi</div>
         </div>
-        <div class="toggle" id="toggle-rate" onclick="toggleSwitch('rate')"></div>
+        <div class="toggle" id="toggle-rate" onclick="toggleSwitch('rate')"><div class="toggle-thumb"></div></div>
       </div>
     </div>
 
@@ -1191,7 +1191,7 @@
         <div class="toggle-info">
           <div class="toggle-name">Spesa aziendale</div>
         </div>
-        <div class="toggle" id="edit-toggle-biz" onclick="toggleEditSwitch('biz')"></div>
+        <div class="toggle" id="edit-toggle-biz" onclick="toggleEditSwitch('biz')"><div class="toggle-thumb"></div></div>
       </div>
     </div>
     <div class="modal-actions">
@@ -1263,7 +1263,11 @@ function load() {
 }
 
 function save() {
-  localStorage.setItem('soldi_tx', JSON.stringify(transactions));
+  try {
+    localStorage.setItem('soldi_tx', JSON.stringify(transactions));
+  } catch(e) {
+    showToast('⚠️ Errore salvataggio — memoria piena?');
+  }
 }
 
 // Fix 4: parse date string safely avoiding UTC offset shifting day
@@ -1273,8 +1277,20 @@ function parseDate(str) {
   return new Date(y, m - 1, d);
 }
 
-// Fix 1: Genera rate future (logica pulita, no duplicati)
+// Converte Date locale in stringa YYYY-MM-DD senza conversione UTC
+function localDateStr(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return y + '-' + m + '-' + d;
+}
+
+// Fix 1+7: expandRecurring con flag anti-ridondanza
+let _recurringLastRun = 0;
 function expandRecurring() {
+  const _ts = Date.now();
+  if (_ts - _recurringLastRun < 5000) return; // max una volta ogni 5s
+  _recurringLastRun = _ts;
   const groups = {};
   transactions.forEach(t => {
     if (t.rateGroupId) {
@@ -1291,7 +1307,11 @@ function expandRecurring() {
     const masterDate = parseDate(master.date);
     for (let i = 2; i <= master.rateTot; i++) {
       if (existing.has(i)) continue;
-      const rateDate = new Date(masterDate.getFullYear(), masterDate.getMonth() + (i - 1), masterDate.getDate());
+      // Clamp giorno al max del mese (evita overflow: es. 31 gen → 28 feb)
+      const _ry = masterDate.getFullYear();
+      const _rm = masterDate.getMonth() + (i - 1);
+      const _maxDay = new Date(_ry, _rm + 1, 0).getDate();
+      const rateDate = new Date(_ry, _rm, Math.min(masterDate.getDate(), _maxDay));
       if (rateDate <= now) {
         const baseNote = (master.note || '').replace(/\(rata \d+\/\d+\)\s*$/, '').trim();
         toAdd.push({
@@ -1299,7 +1319,7 @@ function expandRecurring() {
           type: master.type,
           amount: master.amount,
           cat: master.cat,
-          date: rateDate.toISOString().split('T')[0],
+          date: localDateStr(rateDate),
           note: baseNote ? baseNote + ` (rata ${i}/${master.rateTot})` : `Rata ${i}/${master.rateTot}`,
           biz: master.biz,
           rateGroupId: master.rateGroupId,
@@ -1356,7 +1376,6 @@ function changeMonth(d) {
 }
 
 function renderDashboard() {
-  expandRecurring();
   const m = currentDashMonth, y = currentDashYear;
   document.getElementById('dash-month-label').textContent = MONTHS[m] + ' ' + y;
   document.getElementById('dash-year-label').textContent = y;
@@ -1411,7 +1430,12 @@ function renderDashboard() {
   // Bar chart top categorie
   renderBarChart(monthTx.filter(t => t.type === 'expense'), totalExpense);
 
-  // Anno stats
+  // Anno stats — aggiorna label anno dinamicamente
+  const yearTitle = document.getElementById('year-section-title');
+  if (yearTitle) {
+    const nowY = new Date().getFullYear();
+    yearTitle.textContent = y === nowY ? 'Anno in corso' : 'Anno ' + y;
+  }
   renderYearStats(y);
 
   // Trend
@@ -1446,17 +1470,23 @@ function renderDonut(expTx, total) {
 
   const size = 120, cx = 60, cy = 60, r = 48, ir = 30;
   let paths = '';
-  let angle = -Math.PI / 2;
-  sorted.forEach(([cat, val], i) => {
-    const slice = (val / total) * Math.PI * 2;
-    const x1 = cx + r * Math.cos(angle), y1 = cy + r * Math.sin(angle);
-    angle += slice;
-    const x2 = cx + r * Math.cos(angle), y2 = cy + r * Math.sin(angle);
-    const ix1 = cx + ir * Math.cos(angle - slice), iy1 = cy + ir * Math.sin(angle - slice);
-    const ix2 = cx + ir * Math.cos(angle), iy2 = cy + ir * Math.sin(angle);
-    const large = slice > Math.PI ? 1 : 0;
-    paths += `<path d="M${x1.toFixed(2)},${y1.toFixed(2)} A${r},${r},0,${large},1,${x2.toFixed(2)},${y2.toFixed(2)} L${ix2.toFixed(2)},${iy2.toFixed(2)} A${ir},${ir},0,${large},0,${ix1.toFixed(2)},${iy1.toFixed(2)} Z" fill="${CHART_COLORS[i]}" opacity="0.9"/>`;
-  });
+  if (sorted.length === 1) {
+    // Categoria singola: disegna anello pieno invece di path degenere
+    paths = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${CHART_COLORS[0]}" opacity="0.9"/>` +
+            `<circle cx="${cx}" cy="${cy}" r="${ir}" fill="var(--bg2)"/>`;
+  } else {
+    let angle = -Math.PI / 2;
+    sorted.forEach(([cat, val], i) => {
+      const slice = (val / total) * Math.PI * 2;
+      const x1 = cx + r * Math.cos(angle), y1 = cy + r * Math.sin(angle);
+      angle += slice;
+      const x2 = cx + r * Math.cos(angle), y2 = cy + r * Math.sin(angle);
+      const ix1 = cx + ir * Math.cos(angle - slice), iy1 = cy + ir * Math.sin(angle - slice);
+      const ix2 = cx + ir * Math.cos(angle), iy2 = cy + ir * Math.sin(angle);
+      const large = slice > Math.PI ? 1 : 0;
+      paths += `<path d="M${x1.toFixed(2)},${y1.toFixed(2)} A${r},${r},0,${large},1,${x2.toFixed(2)},${y2.toFixed(2)} L${ix2.toFixed(2)},${iy2.toFixed(2)} A${ir},${ir},0,${large},0,${ix1.toFixed(2)},${iy1.toFixed(2)} Z" fill="${CHART_COLORS[i]}" opacity="0.9"/>`;
+    });
+  }
 
   const legend = sorted.map(([cat, val], i) => {
     const c = cat === '_altro' ? {emoji: '➕', name: 'Altro'} : getCat(cat);
@@ -1481,7 +1511,7 @@ function renderBarChart(expTx, total) {
   const map = {};
   expTx.forEach(t => { map[t.cat] = (map[t.cat] || 0) + t.amount; });
   const sorted = Object.entries(map).sort((a,b) => b[1]-a[1]).slice(0, 5);
-  const max = sorted[0][1];
+  const max = sorted[0][1] || 1;
   el.innerHTML = sorted.map(([cat, val]) => {
     const c = getCat(cat);
     const pct = Math.round(val / max * 100);
@@ -1541,8 +1571,8 @@ function renderTrend(y) {
   data.forEach((d, i) => {
     const x = i * colW + 4;
     const isCur = d.month === now.getMonth() && y === now.getFullYear();
-    const incH = Math.max(1, (d.inc / maxVal) * chartH * 0.8);
-    const expH = Math.max(1, (d.exp / maxVal) * chartH * 0.8);
+    const incH = d.inc > 0 ? Math.max(2, (d.inc / maxVal) * chartH * 0.8) : 0;
+    const expH = d.exp > 0 ? Math.max(2, (d.exp / maxVal) * chartH * 0.8) : 0;
     const barBase = topPad + chartH - botPad + 8;
     const incX = x, expX = x + barW + 2;
     const opacity = isCur ? '1' : '0.5';
@@ -1613,7 +1643,7 @@ function initAdd() {
   document.getElementById('amount-display').textContent = '0';
   document.getElementById('btn-expense').classList.add('active');
   document.getElementById('btn-income').classList.remove('active');
-  document.getElementById('add-date').value = new Date().toISOString().split('T')[0];
+  document.getElementById('add-date').value = localDateStr(new Date());
   document.getElementById('add-note').value = '';
   document.getElementById('toggle-biz').classList.remove('on');
   document.getElementById('toggle-rate').classList.remove('on');
@@ -1621,6 +1651,11 @@ function initAdd() {
   document.getElementById('biz-row').style.display = currentType === 'expense' ? 'flex' : 'none';
   const today = new Date();
   document.getElementById('rate-start').value = today.getFullYear() + '-' + String(today.getMonth()+1).padStart(2,'0');
+  // Fix 10: ripristina ultima categoria usata
+  const lastCat = localStorage.getItem('soldi_lastcat_' + currentType);
+  if (lastCat && CATEGORIES[currentType].find(c => c.id === lastCat)) {
+    selectedCat = lastCat;
+  }
   renderCatGrid();
 }
 
@@ -1631,6 +1666,13 @@ function setType(t) {
   document.getElementById('btn-income').classList.toggle('active', t === 'income');
   document.getElementById('biz-row').style.display = t === 'expense' ? 'flex' : 'none';
   if (t === 'income') { bizToggle = false; document.getElementById('toggle-biz').classList.remove('on'); }
+  // Fix 10: ripristina ultima categoria per il nuovo tipo
+  const lastCatForType = localStorage.getItem('soldi_lastcat_' + t);
+  if (lastCatForType && CATEGORIES[t].find(c => c.id === lastCatForType)) {
+    selectedCat = lastCatForType;
+  } else {
+    selectedCat = null;
+  }
   renderCatGrid();
 }
 
@@ -1651,7 +1693,10 @@ function numpad(v) {
   if (v === 'del') {
     amountStr = amountStr.length > 1 ? amountStr.slice(0, -1) : '0';
   } else if (v === '.') {
-    if (!amountStr.includes('.')) amountStr += '.';
+    if (!amountStr.includes('.')) {
+      if (amountStr === '0') amountStr = '0.';
+      else amountStr += '.';
+    }
   } else {
     if (amountStr === '0') amountStr = v;
     else if (amountStr.includes('.') && amountStr.split('.')[1].length >= 2) return;
@@ -1687,15 +1732,14 @@ function saveTransaction() {
     const groupId = Date.now().toString();
     const [sy, sm] = startMonth.split('-').map(Number);
     const dayOfMonth = parseInt(date.split('-')[2]) || 1;
-    const now = new Date(); now.setHours(23,59,59);
-    // Insert only rata 1 as master — expandRecurring will handle the rest
+    // expandRecurring gestisce automaticamente le rate future
     const rata1Date = new Date(sy, sm - 1, dayOfMonth);
     transactions.push({
       id: groupId + '_r1',
       type: currentType,
       amount: rateAmount,
       cat: selectedCat,
-      date: rata1Date.toISOString().split('T')[0],
+      date: localDateStr(rata1Date),
       note: note ? note + ' (rata 1/' + count + ')' : 'Rata 1/' + count,
       biz: bizToggle,
       rateGroupId: groupId,
@@ -1718,6 +1762,8 @@ function saveTransaction() {
     });
   }
 
+  // Fix 10: ricorda ultima categoria per tipo
+  localStorage.setItem('soldi_lastcat_' + currentType, selectedCat);
   save();
   showToast('Salvato ✓');
   showScreen('dashboard');
@@ -1733,7 +1779,6 @@ function clearSearch() {
 }
 
 function renderStorico() {
-  expandRecurring();
   const searchEl = document.getElementById('storico-search');
   const query = searchEl ? searchEl.value.trim().toLowerCase() : '';
   if (searchEl) {
@@ -1741,7 +1786,13 @@ function renderStorico() {
   }
 
   const bar = document.getElementById('filter-bar');
-  const months = [...new Set(transactions.map(t => t.date.slice(0,7)))].sort().reverse();
+  const _now = new Date();
+  const _currentYM = _now.getFullYear() + '-' + String(_now.getMonth() + 1).padStart(2, '0');
+  const months = [...new Set(transactions.map(t => t.date.slice(0,7)))]
+    .filter(m => m <= _currentYM)
+    .sort().reverse();
+  // Reset filtro se punta a mese non più disponibile (es. futuro filtrato)
+  if (storicoFilter !== 'all' && !months.includes(storicoFilter)) storicoFilter = 'all';
   bar.innerHTML = `<div class="filter-chip ${storicoFilter==='all'?'active':''}" onclick="setFilter('all')">Tutti</div>` +
     months.slice(0, 12).map(m => {
       const [y, mo] = m.split('-');
@@ -1843,8 +1894,10 @@ function saveEdit() {
   const id = document.getElementById('edit-id').value;
   const idx = transactions.findIndex(t => String(t.id) === String(id));
   if (idx === -1) return;
+  const newAmount = parseFloat(document.getElementById('edit-amount').value);
+  if (!newAmount || newAmount <= 0) { showToast('Inserisci un importo valido'); return; }
   transactions[idx].type = editType;
-  transactions[idx].amount = parseFloat(document.getElementById('edit-amount').value) || transactions[idx].amount;
+  transactions[idx].amount = newAmount;
   transactions[idx].cat = document.getElementById('edit-cat').value;
   transactions[idx].date = document.getElementById('edit-date').value;
   transactions[idx].note = document.getElementById('edit-note').value.trim();
@@ -1861,8 +1914,36 @@ function deleteTransaction() {
   const t = transactions.find(t => String(t.id) === String(id));
   if (!t) return;
   const label = t.note || getCat(t.cat).name;
-  if (!confirm(`Eliminare "${label}"?`)) return;
-  transactions = transactions.filter(t => String(t.id) !== String(id));
+  // Se è una rata, offri opzione di eliminare tutto il gruppo
+  if (t.rateGroupId) {
+    const groupCount = transactions.filter(x => x.rateGroupId === t.rateGroupId).length;
+    const choice = confirm(
+      `Eliminare solo questa rata (${t.rateCurrent}/${t.rateTot})?
+
+` +
+      `OK = Solo questa rata
+Annulla = Elimina tutte le ${groupCount} rate del gruppo`
+    );
+    if (choice) {
+      // Elimina solo questa rata. Se era la master (rata 1), promuovi rata 2 a master
+      transactions = transactions.filter(x => String(x.id) !== String(id));
+      if (t.rateCurrent === 1) {
+        const newMaster = transactions.find(x => x.rateGroupId === t.rateGroupId && x.rateCurrent === 2);
+        if (newMaster) {
+          newMaster.rateCurrent = 1;
+          if (newMaster.note) {
+            newMaster.note = newMaster.note.replace(/\(rata \d+\/(\d+)\)/, '(rata 1/$1)');
+          }
+        }
+      }
+    } else {
+      // Elimina tutto il gruppo
+      transactions = transactions.filter(x => x.rateGroupId !== t.rateGroupId);
+    }
+  } else {
+    if (!confirm(`Eliminare "${label}"?`)) return;
+    transactions = transactions.filter(x => String(x.id) !== String(id));
+  }
   save();
   closeModal();
   showToast('Eliminato');
@@ -1892,8 +1973,36 @@ function importData(input) {
       const data = JSON.parse(e.target.result);
       const imported = data.transactions || data;
       if (!Array.isArray(imported)) throw new Error();
-      transactions = imported;
+      // Normalizza i tipi per sicurezza (amount potrebbe essere stringa)
+      imported.forEach(t => { t.amount = parseFloat(t.amount) || 0; });
+      if (transactions.length > 0) {
+        const choice = confirm(
+          'Hai ' + transactions.length + ' movimenti salvati.\n\n' +
+          'OK = Sostituisci tutto con i dati importati\n' +
+          'Annulla = Unisci (mantieni i tuoi + aggiungi quelli nuovi)'
+        );
+        if (choice) {
+          // Sostituisci
+          transactions = imported;
+        } else {
+          // Unisci: aggiungi solo quelli con ID non già presenti
+          const existingIds = new Set(transactions.map(t => String(t.id)));
+          const toAdd = imported.filter(t => !existingIds.has(String(t.id)));
+          transactions = transactions.concat(toAdd);
+          showToast('Uniti: +' + toAdd.length + ' nuovi movimenti ✓');
+          save();
+          _recurringLastRun = 0;
+          expandRecurring();
+          renderStorico();
+          renderDashboard();
+          return;
+        }
+      } else {
+        transactions = imported;
+      }
       save();
+      _recurringLastRun = 0;
+      expandRecurring();
       showToast('Importati ' + imported.length + ' movimenti ✓');
       renderStorico();
       renderDashboard();
@@ -1908,7 +2017,27 @@ function toggleTheme() {
   const isLight = document.body.classList.toggle('light');
   localStorage.setItem('soldi_theme', isLight ? 'light' : 'dark');
   document.getElementById('theme-btn').textContent = isLight ? '🌙' : '☀️';
+  // Fix 4: aggiorna theme-color barra di sistema (Android)
+  document.querySelector('meta[name="theme-color"]').setAttribute('content', isLight ? '#f5f5f2' : '#0f0f0f');
 }
+
+// ── FIX 11: Swipe laterale su balance card per cambiare mese ──
+(function() {
+  let touchStartX = 0, touchStartY = 0;
+  const el = document.getElementById('screen-dashboard');
+  el.addEventListener('touchstart', e => {
+    touchStartX = e.touches[0].clientX;
+    touchStartY = e.touches[0].clientY;
+  }, { passive: true });
+  el.addEventListener('touchend', e => {
+    const dx = e.changedTouches[0].clientX - touchStartX;
+    const dy = e.changedTouches[0].clientY - touchStartY;
+    // Solo swipe orizzontale deciso (>60px) e non prevalentemente verticale
+    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      changeMonth(dx < 0 ? 1 : -1);
+    }
+  }, { passive: true });
+})();
 
 // ── INIT ──
 load();
@@ -1916,6 +2045,7 @@ load();
 if (localStorage.getItem('soldi_theme') === 'light') {
   document.body.classList.add('light');
   document.getElementById('theme-btn').textContent = '🌙';
+  document.querySelector('meta[name="theme-color"]').setAttribute('content', '#f5f5f2');
 }
 // Set dashboard to current month
 currentDashMonth = new Date().getMonth();
