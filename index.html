@@ -1314,10 +1314,11 @@ function expandRecurring() {
       const rateDate = new Date(_ry, _rm, Math.min(masterDate.getDate(), _maxDay));
       if (rateDate <= now) {
         const baseNote = (master.note || '').replace(/\(rata \d+\/\d+\)\s*$/, '').trim();
+        const isLast = i === master.rateTot;
         toAdd.push({
           id: master.rateGroupId + '_r' + i,
           type: master.type,
-          amount: master.amount,
+          amount: isLast && master.rateLastAmount ? master.rateLastAmount : master.amount,
           cat: master.cat,
           date: localDateStr(rateDate),
           note: baseNote ? baseNote + ` (rata ${i}/${master.rateTot})` : `Rata ${i}/${master.rateTot}`,
@@ -1347,6 +1348,11 @@ function getCat(id, type) {
   if (id === '_altro') return {name: 'Altro', emoji: '📦', id: '_altro'};
   const all = [...CATEGORIES.expense, ...CATEGORIES.income];
   return all.find(c => c.id === id) || {name: id, emoji: '📌'};
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 function showToast(msg) {
@@ -1626,8 +1632,8 @@ function txHTML(t) {
   return `<div class="tx-item" onclick="openEdit('${t.id}')">
     <div class="tx-icon" style="background:${t.type==='income' ? 'var(--accent-dim)' : 'var(--bg3)'}">${c.emoji}</div>
     <div class="tx-info">
-      <div class="tx-name">${t.note || c.name}</div>
-      <div class="tx-cat">${c.name} · ${dateStr} ${bizBadge}${rateBadge}</div>
+      <div class="tx-name">${escapeHtml(t.note) || escapeHtml(c.name)}</div>
+      <div class="tx-cat">${escapeHtml(c.name)} · ${dateStr} ${bizBadge}${rateBadge}</div>
     </div>
     <div class="tx-amount ${cls}">${sign} ${fmt(t.amount)}</div>
   </div>`;
@@ -1729,6 +1735,7 @@ function saveTransaction() {
     if (!count || count < 2) { showToast('Inserisci un numero di rate valido (min 2)'); return; }
     if (!startMonth) { showToast('Seleziona il mese di inizio'); return; }
     const rateAmount = Math.round((amount / count) * 100) / 100;
+    const lastRateAmount = Math.round((amount - rateAmount * (count - 1)) * 100) / 100;
     const groupId = Date.now().toString();
     const [sy, sm] = startMonth.split('-').map(Number);
     const dayOfMonth = parseInt(date.split('-')[2]) || 1;
@@ -1744,9 +1751,10 @@ function saveTransaction() {
       biz: bizToggle,
       rateGroupId: groupId,
       rateCurrent: 1,
-      rateTot: count
+      rateTot: count,
+      rateLastAmount: lastRateAmount
     });
-    // expandRecurring will auto-generate past rates on next render
+    _recurringLastRun = 0; // forza espansione al prossimo render
   } else {
     transactions.push({
       id: Date.now().toString(),
@@ -1829,7 +1837,7 @@ function renderStorico() {
     groups[k].sort((a, b) => parseDate(b.date) - parseDate(a.date));
   });
 
-  el.innerHTML = Object.entries(groups).map(([key, txs]) => {
+  el.innerHTML = Object.entries(groups).sort((a,b) => b[0].localeCompare(a[0])).map(([key, txs]) => {
     const [y, mo] = key.split('-');
     const tot = txs.reduce((s,t) => t.type === 'income' ? s + t.amount : s - t.amount, 0);
     const sign = tot >= 0 ? '+' : '−';
@@ -1971,9 +1979,13 @@ function importData(input) {
   reader.onload = e => {
     try {
       const data = JSON.parse(e.target.result);
-      const imported = data.transactions || data;
-      if (!Array.isArray(imported)) throw new Error();
-      // Normalizza i tipi per sicurezza (amount potrebbe essere stringa)
+      const rawImported = data.transactions || data;
+      if (!Array.isArray(rawImported)) throw new Error();
+      // Valida e normalizza ogni transazione
+      const imported = rawImported.filter(t => t.date && t.type && (t.type==='expense'||t.type==='income'));
+      if (imported.length < rawImported.length) {
+        console.warn('Scartate', rawImported.length - imported.length, 'transazioni non valide');
+      }
       imported.forEach(t => { t.amount = parseFloat(t.amount) || 0; });
       if (transactions.length > 0) {
         const choice = confirm(
