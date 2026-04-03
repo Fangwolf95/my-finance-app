@@ -826,6 +826,38 @@
     margin-top: 3px;
   }
 
+  /* year nav in storico */
+  .year-nav-btn {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    width: 30px; height: 30px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    font-size: 18px;
+    flex-shrink: 0;
+    transition: background 0.15s;
+  }
+  .year-nav-btn:disabled { opacity: 0.3; cursor: default; }
+  .year-nav-btn:not(:disabled):active { background: var(--bg4); }
+  .year-nav-label {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text);
+    min-width: 38px;
+    text-align: center;
+    flex-shrink: 0;
+  }
+  .filter-chip-sep {
+    width: 1px;
+    height: 20px;
+    background: var(--border);
+    flex-shrink: 0;
+    align-self: center;
+  }
+
   /* search bar */
   .search-wrap {
     display: flex;
@@ -1273,8 +1305,9 @@ function save() {
 // Fix 4: parse date string safely avoiding UTC offset shifting day
 function parseDate(str) {
   if (!str) return new Date();
-  const [y, m, d] = str.split('-').map(Number);
-  return new Date(y, m - 1, d);
+  const parts = str.split('-').map(Number);
+  if (parts.length !== 3 || parts.some(isNaN)) return new Date();
+  return new Date(parts[0], parts[1] - 1, parts[2]);
 }
 
 // Converte Date locale in stringa YYYY-MM-DD senza conversione UTC
@@ -1335,9 +1368,11 @@ function expandRecurring() {
 
 // ── UTILS ──
 function fmt(n) {
+  if (!isFinite(n)) return '€ 0,00';
   return '€\u00a0' + Math.abs(n).toLocaleString('it-IT', {minimumFractionDigits: 2, maximumFractionDigits: 2});
 }
 function fmtShort(n) {
+  if (!isFinite(n)) return '€ 0';
   if (Math.abs(n) >= 1000) return '€\u00a0' + (Math.abs(n)/1000).toFixed(1) + 'k';
   return '€\u00a0' + Math.abs(n).toLocaleString('it-IT', {minimumFractionDigits: 0, maximumFractionDigits: 0});
 }
@@ -1370,7 +1405,7 @@ function showScreen(name) {
   document.getElementById('nav-' + name).classList.add('active');
   if (name === 'dashboard') renderDashboard();
   if (name === 'add') initAdd();
-  if (name === 'storico') renderStorico();
+  if (name === 'storico') { storicoYear = currentDashYear; storicoFilter = 'all'; renderStorico(); }
 }
 
 // ── DASHBOARD ──
@@ -1455,12 +1490,12 @@ const CHART_COLORS = ['#c8f542','#4da6ff','#ff9f43','#ff5f57','#a29bfe','#fd79a8
 
 function renderDonut(expTx, total) {
   const wrap = document.getElementById('donut-wrap');
-  if (!expTx.length) {
+  if (!expTx.length || !total) {
     wrap.innerHTML = '<div class="empty" style="width:100%;padding:20px 0"><div class="empty-text" style="color:var(--text3)">Nessuna spesa</div></div>';
     return;
   }
   const map = {};
-  expTx.forEach(t => { map[t.cat] = (map[t.cat] || 0) + t.amount; });
+  expTx.forEach(t => { if (t.amount > 0) map[t.cat] = (map[t.cat] || 0) + t.amount; });
   const allEntries = Object.entries(map).sort((a,b) => b[1]-a[1]);
 
   // group slices < 4% into "altro"
@@ -1779,6 +1814,19 @@ function saveTransaction() {
 
 // ── STORICO ──
 let storicoFilter = 'all';
+let storicoYear = new Date().getFullYear();
+
+function changeStoricoYear(delta) {
+  const years = [...new Set(transactions.map(t => t.date.slice(0,4)).filter(Boolean))]
+    .filter(y => parseInt(y) <= new Date().getFullYear()).sort();
+  const idx = years.indexOf(String(storicoYear));
+  const newIdx = idx + delta;
+  if (newIdx >= 0 && newIdx < years.length) {
+    storicoYear = parseInt(years[newIdx]);
+    storicoFilter = 'all';
+    renderStorico();
+  }
+}
 
 function clearSearch() {
   document.getElementById('storico-search').value = '';
@@ -1796,19 +1844,44 @@ function renderStorico() {
   const bar = document.getElementById('filter-bar');
   const _now = new Date();
   const _currentYM = _now.getFullYear() + '-' + String(_now.getMonth() + 1).padStart(2, '0');
+
+  // Tutti gli anni disponibili
+  const _curYear = new Date().getFullYear();
+  const allYears = [...new Set(transactions.map(t => t.date.slice(0,4)).filter(Boolean))]
+    .filter(y => parseInt(y) <= _curYear).sort();
+  // Assicura che storicoYear sia valido
+  if (allYears.length && !allYears.includes(String(storicoYear))) {
+    storicoYear = parseInt(allYears[allYears.length - 1]);
+  }
+  const yearIdx = allYears.indexOf(String(storicoYear));
+  const canPrev = yearIdx > 0;
+  const canNext = yearIdx < allYears.length - 1;
+
+  // Mesi dell'anno selezionato (senza futuri)
   const months = [...new Set(transactions.map(t => t.date.slice(0,7)))]
-    .filter(m => m <= _currentYM)
+    .filter(m => m.startsWith(String(storicoYear)) && m <= _currentYM)
     .sort().reverse();
-  // Reset filtro se punta a mese non più disponibile (es. futuro filtrato)
   if (storicoFilter !== 'all' && !months.includes(storicoFilter)) storicoFilter = 'all';
-  bar.innerHTML = `<div class="filter-chip ${storicoFilter==='all'?'active':''}" onclick="setFilter('all')">Tutti</div>` +
-    months.slice(0, 12).map(m => {
+
+  bar.innerHTML =
+    `<button class="year-nav-btn" onclick="changeStoricoYear(-1)" ${canPrev?'':'disabled'}>&#8249;</button>` +
+    `<span class="year-nav-label">${storicoYear}</span>` +
+    `<button class="year-nav-btn" onclick="changeStoricoYear(1)" ${canNext?'':'disabled'}>&#8250;</button>` +
+    `<div class="filter-chip-sep"></div>` +
+    `<div class="filter-chip ${storicoFilter==='all'?'active':''}" onclick="setFilter('all')">Tutti</div>` +
+    months.map(m => {
       const [y, mo] = m.split('-');
-      return `<div class="filter-chip ${storicoFilter===m?'active':''}" onclick="setFilter('${m}')">${MONTHS_SHORT[parseInt(mo)-1]} ${y}</div>`;
+      return `<div class="filter-chip ${storicoFilter===m?'active':''}" onclick="setFilter('${m}')">${MONTHS_SHORT[parseInt(mo)-1]}</div>`;
     }).join('');
 
-  let filtered = [...transactions].sort((a,b) => parseDate(b.date) - parseDate(a.date));
-  if (storicoFilter !== 'all') filtered = filtered.filter(t => t.date.startsWith(storicoFilter));
+  const _today = localDateStr(new Date());
+  let filtered = [...transactions]
+    .filter(t => {
+      if (!t.date.startsWith(String(storicoYear))) return false;
+      if (storicoFilter !== 'all') return t.date.startsWith(storicoFilter);
+      return t.date <= _today;
+    })
+    .sort((a,b) => parseDate(b.date) - parseDate(a.date));
 
   // search filter
   if (query) {
@@ -1841,7 +1914,7 @@ function renderStorico() {
     const [y, mo] = key.split('-');
     const tot = txs.reduce((s,t) => t.type === 'income' ? s + t.amount : s - t.amount, 0);
     const sign = tot >= 0 ? '+' : '−';
-    return `<div class="month-group-label">${MONTHS[parseInt(mo)-1]} ${y} <span style="color:${tot>=0?'var(--accent)':'var(--red)'}; font-family:var(--font-mono); font-size:11px; margin-left:8px">${sign} ${fmt(Math.abs(tot))}</span></div>
+    return `<div class="month-group-label">${MONTHS[parseInt(mo)-1]} <span style="color:${tot>=0?'var(--accent)':'var(--red)'}; font-family:var(--font-mono); font-size:11px; margin-left:8px">${sign} ${fmt(Math.abs(tot))}</span></div>
       <div class="card" style="padding:0 16px">
         <div class="tx-list">${txs.map(t => txHTML(t)).join('')}</div>
       </div>`;
@@ -1880,7 +1953,7 @@ function openEdit(id) {
   // populate cat select
   const sel = document.getElementById('edit-cat');
   const all = [...CATEGORIES.expense, ...CATEGORIES.income];
-  sel.innerHTML = all.map(c => `<option value="${c.id}" ${c.id===t.cat?'selected':''}>${c.emoji} ${c.name}</option>`).join('');
+  sel.innerHTML = all.map(c => `<option value="${c.id}" ${c.id===t.cat?'selected':''}>${c.emoji} ${escapeHtml(c.name)}</option>`).join('');
   document.getElementById('edit-modal').classList.add('open');
 }
 
@@ -1910,6 +1983,7 @@ function saveEdit() {
   transactions[idx].date = document.getElementById('edit-date').value;
   transactions[idx].note = document.getElementById('edit-note').value.trim();
   transactions[idx].biz = editBiz;
+  _recurringLastRun = 0;
   save();
   closeModal();
   showToast('Modificato ✓');
@@ -1952,6 +2026,7 @@ Annulla = Elimina tutte le ${groupCount} rate del gruppo`
     if (!confirm(`Eliminare "${label}"?`)) return;
     transactions = transactions.filter(x => String(x.id) !== String(id));
   }
+  _recurringLastRun = 0;
   save();
   closeModal();
   showToast('Eliminato');
@@ -1976,13 +2051,14 @@ function importData(input) {
   const file = input.files[0];
   if (!file) return;
   const reader = new FileReader();
+  reader.onerror = () => { showToast('Errore lettura file'); };
   reader.onload = e => {
     try {
       const data = JSON.parse(e.target.result);
       const rawImported = data.transactions || data;
       if (!Array.isArray(rawImported)) throw new Error();
       // Valida e normalizza ogni transazione
-      const imported = rawImported.filter(t => t.date && t.type && (t.type==='expense'||t.type==='income'));
+      const imported = rawImported.filter(t => t.date && t.type && (t.type==='expense'||t.type==='income') && parseFloat(t.amount||0) >= 0);
       if (imported.length < rawImported.length) {
         console.warn('Scartate', rawImported.length - imported.length, 'transazioni non valide');
       }
@@ -2005,6 +2081,7 @@ function importData(input) {
           save();
           _recurringLastRun = 0;
           expandRecurring();
+          storicoYear = new Date().getFullYear();
           renderStorico();
           renderDashboard();
           return;
@@ -2015,6 +2092,7 @@ function importData(input) {
       save();
       _recurringLastRun = 0;
       expandRecurring();
+      storicoYear = new Date().getFullYear();
       showToast('Importati ' + imported.length + ' movimenti ✓');
       renderStorico();
       renderDashboard();
