@@ -976,6 +976,21 @@
 <!-- TOAST -->
 <div class="toast" id="toast"></div>
 
+<!-- BACKUP BANNER -->
+<div id="backup-banner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:150;
+  background:var(--accent);padding:12px 16px;
+  display:none;align-items:center;gap:12px;
+  padding-top:calc(12px + env(safe-area-inset-top))">
+  <div style="flex:1;font-size:13px;font-weight:700;color:#0f0f0f;line-height:1.3">
+    💾 Nessun backup oggi — esporta per sicurezza
+  </div>
+  <button onclick="exportBackup()" style="background:#0f0f0f;color:var(--accent);border:none;
+    border-radius:8px;padding:8px 14px;font-family:var(--font-display);font-size:12px;
+    font-weight:800;cursor:pointer;white-space:nowrap">Esporta</button>
+  <button onclick="dismissBackupBanner()" style="background:none;border:none;
+    color:rgba(0,0,0,0.5);font-size:20px;cursor:pointer;padding:0 4px;line-height:1">×</button>
+</div>
+
 <!-- SCREEN: DASHBOARD -->
 <div class="screen active" id="screen-dashboard">
   <div class="topbar">
@@ -1288,15 +1303,40 @@ let editType = 'expense';
 function load() {
   try {
     const d = localStorage.getItem('soldi_tx');
-    if (d) transactions = JSON.parse(d);
-  } catch(e) { transactions = []; }
-  // Espandi rate
+    if (d) {
+      transactions = JSON.parse(d);
+    } else {
+      // Soluzione A: dati principali vuoti — prova ripristino dal backup
+      const backup = localStorage.getItem('soldi_backup');
+      if (backup) {
+        transactions = JSON.parse(backup);
+        localStorage.setItem('soldi_tx', backup); // ripristina
+        showToast('✓ Dati ripristinati dal backup automatico');
+      }
+    }
+  } catch(e) {
+    // Dati principali corrotti — prova backup
+    try {
+      const backup = localStorage.getItem('soldi_backup');
+      if (backup) {
+        transactions = JSON.parse(backup);
+        localStorage.setItem('soldi_tx', backup);
+        showToast('✓ Dati ripristinati dal backup automatico');
+      } else {
+        transactions = [];
+      }
+    } catch(e2) { transactions = []; }
+  }
   expandRecurring();
 }
 
 function save() {
   try {
-    localStorage.setItem('soldi_tx', JSON.stringify(transactions));
+    const data = JSON.stringify(transactions);
+    localStorage.setItem('soldi_tx', data);
+    // Soluzione A: copia di sicurezza automatica
+    localStorage.setItem('soldi_backup', data);
+    localStorage.setItem('soldi_backup_ts', Date.now().toString());
   } catch(e) {
     showToast('⚠️ Errore salvataggio — memoria piena?');
   }
@@ -2041,9 +2081,11 @@ function exportData() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'soldi_backup_' + new Date().toISOString().split('T')[0] + '.json';
+  a.download = 'soldi_backup_' + localDateStr(new Date()) + '.json';
   a.click();
   URL.revokeObjectURL(url);
+  localStorage.setItem('soldi_last_export', localDateStr(new Date()));
+  dismissBackupBanner();
   showToast('Esportato ✓');
 }
 
@@ -2102,6 +2144,38 @@ function importData(input) {
   input.value = '';
 }
 
+// ── BACKUP BANNER ──
+function checkBackupReminder() {
+  const today = localDateStr(new Date());
+  const lastExport = localStorage.getItem('soldi_last_export');
+  if (lastExport === today) return; // già esportato oggi
+  // Mostra banner solo se ci sono transazioni
+  if (transactions.length === 0) return;
+  const banner = document.getElementById('backup-banner');
+  banner.style.display = 'flex';
+  // Spinge giù il topbar della dashboard
+  const topbar = document.querySelector('#screen-dashboard .topbar');
+  if (topbar) topbar.style.paddingTop = '0';
+}
+
+function dismissBackupBanner() {
+  document.getElementById('backup-banner').style.display = 'none';
+}
+
+function exportBackup() {
+  const data = JSON.stringify({ version: 1, exported: new Date().toISOString(), transactions }, null, 2);
+  const blob = new Blob([data], {type: 'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'soldi_backup.json'; // nome fisso → sovrascrive su Android
+  a.click();
+  URL.revokeObjectURL(url);
+  localStorage.setItem('soldi_last_export', localDateStr(new Date()));
+  dismissBackupBanner();
+  showToast('Backup esportato ✓');
+}
+
 // ── THEME ──
 function toggleTheme() {
   const isLight = document.body.classList.toggle('light');
@@ -2141,6 +2215,8 @@ if (localStorage.getItem('soldi_theme') === 'light') {
 currentDashMonth = new Date().getMonth();
 currentDashYear = new Date().getFullYear();
 renderDashboard();
+// Controlla promemoria backup
+checkBackupReminder();
 </script>
 </body>
 </html>
